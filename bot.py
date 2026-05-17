@@ -23,6 +23,7 @@ if not TODOIST_TOKEN:
     sys.exit("Error: TODOIST_TOKEN not set in .env")
 
 TODOIST_PROJECT_ID = os.environ.get("TODOIST_PROJECT_ID") or None
+TODOIST_DUE_LANG = os.environ.get("TODOIST_DUE_LANG", "de")
 
 logging.basicConfig(format="%(levelname)s %(message)s", level=logging.WARNING)
 
@@ -43,7 +44,7 @@ def main() -> None:
         kwargs["project_id"] = project_id
     if args.due:
         kwargs["due_string"] = args.due
-        kwargs["due_lang"] = "en"
+        kwargs["due_lang"] = TODOIST_DUE_LANG
 
     try:
         task = api.add_task(**kwargs)
