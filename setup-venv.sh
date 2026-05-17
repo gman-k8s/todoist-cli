@@ -12,10 +12,11 @@ fi
 uv venv .venv
 uv pip install --python .venv/bin/python3 \
     "todoist-api-python>=2.1" \
-    "python-dotenv>=1.0"
+    "python-dotenv>=1.0" \
+    "google-generativeai>=0.7"
 
 chmod +x bot.py
 
 echo ""
 echo "Done. .venv ready."
-echo "Copy .env.example to .env and fill in TODOIST_TOKEN (and optionally TODOIST_PROJECT_ID)."
+echo "Copy .env.example to .env and fill in TODOIST_TOKEN and GOOGLE_API_KEY."
