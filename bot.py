@@ -36,10 +36,12 @@ def enrich_title(title: str) -> str:
     if not GOOGLE_API_KEY:
         return title
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(_GEMINI_PROMPT.format(title=title))
+        from google import genai
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=_GEMINI_PROMPT.format(title=title),
+        )
         enriched = response.text.strip()
         if enriched:
             return enriched

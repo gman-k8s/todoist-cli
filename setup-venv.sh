@@ -13,7 +13,7 @@ uv venv .venv
 uv pip install --python .venv/bin/python3 \
     "todoist-api-python>=2.1" \
     "python-dotenv>=1.0" \
-    "google-generativeai>=0.7"
+    "google-genai>=1.0"
 
 chmod +x bot.py
 
