@@ -24,6 +24,7 @@ if not TODOIST_TOKEN:
 TODOIST_PROJECT_ID = os.environ.get("TODOIST_PROJECT_ID") or None
 TODOIST_DUE_LANG = os.environ.get("TODOIST_DUE_LANG", "de")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or None
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
 _GEMINI_PROMPT = (
     "You are a task assistant. Given a task title, prepend a single fitting emoji that represents the task.\n"
@@ -39,7 +40,7 @@ def enrich_title(title: str) -> str:
         from google import genai
         client = genai.Client(api_key=GOOGLE_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model=GEMINI_MODEL,
             contents=_GEMINI_PROMPT.format(title=title),
         )
         enriched = response.text.strip()
