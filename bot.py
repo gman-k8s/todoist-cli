@@ -36,11 +36,25 @@ _GEMINI_PROMPT = (
 
 _PARSE_PROMPT = (
     "You parse a spoken German to-do instruction into a Todoist task.\n"
-    "Extract the task content (title) and the due/recurrence phrase separately.\n"
-    "The due phrase is natural-language Todoist syntax (e.g. 'alle 6 Wochen', 'morgen', "
-    "'jeden Montag', 'am 5.'). If no due/recurrence is present, use null.\n"
-    "Remove the due phrase from the title. Keep the title concise and natural.\n"
-    'Return ONLY minified JSON: {{"title": "...", "due": "..." or null}}. No markdown, no explanation.\n'
+    "Return three things:\n"
+    "1. emoji: a single emoji that best represents the task.\n"
+    "2. title: the task content, WITHOUT any date/time/recurrence words, concise and natural.\n"
+    "3. due: the date/time/recurrence phrase in German natural language, or null if none.\n"
+    "\n"
+    "The due phrase uses Todoist's natural-language syntax. Recognize ALL time expressions, "
+    "including single words anywhere in the sentence:\n"
+    "  'heute', 'morgen', 'übermorgen', 'heute Abend', 'morgen früh', 'nächste Woche',\n"
+    "  'am Montag', 'jeden Montag', 'jeden Tag', 'alle 6 Wochen', 'am 5.', 'in 3 Tagen',\n"
+    "  'um 18 Uhr', 'am Wochenende'.\n"
+    "Move the due words out of the title. If no time expression exists, due is null.\n"
+    "\n"
+    "Examples:\n"
+    '  "Ventilator einschalten heute" -> {{"emoji": "🌀", "title": "Ventilator einschalten", "due": "heute"}}\n'
+    '  "Toilette in OG2 alle 6 Wochen putzen" -> {{"emoji": "🚽", "title": "Toilette in OG2 putzen", "due": "alle 6 Wochen"}}\n'
+    '  "Mama anrufen" -> {{"emoji": "📞", "title": "Mama anrufen", "due": null}}\n'
+    "\n"
+    'Return ONLY minified JSON: {{"emoji": "...", "title": "...", "due": "..." or null}}. '
+    "No markdown, no explanation.\n"
     "Instruction: {text}"
 )
 
@@ -65,8 +79,9 @@ def enrich_title(title: str) -> str:
 
 
 def parse_text(text: str) -> tuple[str, str | None]:
-    """Split a freeform instruction into (title, due) via Gemini.
+    """Parse a freeform instruction into (emoji-prefixed title, due) via Gemini.
 
+    Single Gemini call also assigns the emoji, so no separate enrich step.
     Falls back to (text, None) if Gemini is unavailable or returns garbage.
     """
     if not GOOGLE_API_KEY:
@@ -78,11 +93,14 @@ def parse_text(text: str) -> tuple[str, str | None]:
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         data = json.loads(raw)
         title = (data.get("title") or "").strip()
+        emoji = (data.get("emoji") or "").strip()
         due = data.get("due")
         if isinstance(due, str):
             due = due.strip() or None
         if not title:
             raise ValueError("no title in parsed result")
+        if emoji and not title.startswith(emoji):
+            title = f"{emoji} {title}"
         return title, due
     except Exception as e:
         print(f"Warning: parse failed, using raw text as title ({e})", file=sys.stderr)
@@ -108,12 +126,12 @@ def main() -> None:
     project_id = args.project_id or TODOIST_PROJECT_ID
 
     if args.text:
-        raw_title, parsed_due = parse_text(args.text)
+        # parse_text already assigns the emoji in the same Gemini call
+        title, parsed_due = parse_text(args.text)
         due = args.due or parsed_due
     else:
-        raw_title, due = args.title, args.due
-
-    title = enrich_title(raw_title)
+        title = enrich_title(args.title)
+        due = args.due
 
     api = TodoistAPI(TODOIST_TOKEN)
 
