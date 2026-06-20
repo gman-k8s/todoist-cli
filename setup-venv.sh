@@ -9,7 +9,9 @@ if ! command -v uv &>/dev/null; then
     exit 1
 fi
 
-uv venv .venv
+if [ ! -d .venv ]; then
+    uv venv .venv
+fi
 uv pip install --python .venv/bin/python3 \
     "todoist-api-python>=2.1" \
     "python-dotenv>=1.0" \
