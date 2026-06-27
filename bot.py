@@ -42,11 +42,11 @@ _SHOPPING_PROMPT = (
     "List conjunctions ('und', 'sowie', 'außerdem') are item separators, not part of item names.\n"
     "\n"
     "Examples:\n"
-    '  "setze Milch auf die Einkaufsliste" -> [{"emoji":"🥛","item":"Milch"}]\n'
-    '  "setze Bananen, Milch und Brot auf die Einkaufsliste" -> [{"emoji":"🍌","item":"Bananen"},{"emoji":"🥛","item":"Milch"},{"emoji":"🍞","item":"Brot"}]\n'
-    '  "ich brauche Eier und Käse" -> [{"emoji":"🥚","item":"Eier"},{"emoji":"🧀","item":"Käse"}]\n'
+    '  "setze Milch auf die Einkaufsliste" -> [{{"emoji":"🥛","item":"Milch"}}]\n'
+    '  "setze Bananen, Milch und Brot auf die Einkaufsliste" -> [{{"emoji":"🍌","item":"Bananen"}},{{"emoji":"🥛","item":"Milch"}},{{"emoji":"🍞","item":"Brot"}}]\n'
+    '  "ich brauche Eier und Käse" -> [{{"emoji":"🥚","item":"Eier"}},{{"emoji":"🧀","item":"Käse"}}]\n'
     "\n"
-    'Return ONLY minified JSON array: [{"emoji":"...","item":"..."}]. No markdown, no explanation.\n'
+    'Return ONLY minified JSON array: [{{"emoji":"...","item":"..."}}]. No markdown, no explanation.\n'
     "Instruction: {text}"
 )
 
