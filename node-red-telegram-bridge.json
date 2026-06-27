@@ -4,7 +4,7 @@
         "type": "tab",
         "label": "Telegram Bridge",
         "disabled": false,
-        "info": "Bridges Telegram to HA via Node-RED.\nVoice → Gemini STT → telegram_text event.\nText → telegram_text event.\n\nSETUP:\n1. Double-click 'Mia Bot' config and enter bot token\n2. Edit 'Set Tokens' function: enter API keys\n3. In 'Fire HA Event' node: select your HA server\n4. Deploy"
+        "info": "Bridges Telegram to HA via Node-RED.\nVoice → Gemini STT → telegram_text event.\nText → telegram_text event.\nCallback query → telegram_callback event.\n\nSETUP:\n1. Double-click 'Mia Bot' config and enter bot token\n2. Edit 'Set Tokens' function: enter API keys\n3. In 'Fire HA Event' nodes: select your HA server\n4. Deploy"
     },
     {
         "id": "tb_bot_cfg",
@@ -74,19 +74,87 @@
         "id": "tb_switch",
         "type": "switch",
         "z": "tb_flow",
-        "name": "Voice?",
+        "name": "Type?",
         "property": "payload.type",
         "propertyType": "msg",
         "rules": [
             {"t": "eq", "v": "voice", "vt": "str"},
+            {"t": "eq", "v": "callback_query", "vt": "str"},
             {"t": "else"}
         ],
         "checkall": "false",
         "repair": false,
-        "outputs": 2,
+        "outputs": 3,
         "x": 270,
         "y": 220,
-        "wires": [["tb_voice_prep"], ["tb_text_event"]]
+        "wires": [["tb_voice_prep"], ["tb_callback_event"], ["tb_text_event"]]
+    },
+    {
+        "id": "tb_callback_event",
+        "type": "function",
+        "z": "tb_flow",
+        "name": "Callback → HA Event",
+        "func": "const orig = msg.originalMessage;\nconst from = orig.from || {};\nconst origMsg = orig.message || {};\nconst chatId = (origMsg.chat && origMsg.chat.id) ? origMsg.chat.id : msg.payload.chatId;\nconst token = flow.get('telegram_token');\nconst callbackData = msg.payload.content;\n\n// Store event data in msg.eventData to avoid JSONata 'payload' resolution issues\nmsg.eventData = {\n    user_id: from.id,\n    from_first: from.first_name || '',\n    from_last: from.last_name || '',\n    chat_id: chatId,\n    callback_data: callbackData,\n    message: {\n        message_id: origMsg.message_id,\n        chat_id: chatId,\n        text: origMsg.text || ''\n    }\n};\n\n// Output 2: answerCallbackQuery (clears button spinner)\nconst answerMsg = {\n    url: `https://api.telegram.org/bot${token}/answerCallbackQuery`,\n    headers: { 'Content-Type': 'application/json' },\n    payload: { callback_query_id: orig.id }\n};\n\nnode.status({fill:'purple', shape:'dot', text: callbackData});\nreturn [msg, answerMsg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 520,
+        "y": 160,
+        "wires": [["tb_fire_callback"], ["tb_answer_cb"]]
+    },
+    {
+        "id": "tb_answer_cb",
+        "type": "http request",
+        "z": "tb_flow",
+        "name": "answerCallbackQuery",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 750,
+        "y": 120,
+        "wires": [[]]
+    },
+    {
+        "id": "tb_fire_callback",
+        "type": "ha-fire-event",
+        "z": "tb_flow",
+        "name": "Fire telegram_callback",
+        "server": "",
+        "version": 2,
+        "event": "telegram_callback",
+        "data": "eventData",
+        "dataType": "jsonata",
+        "x": 750,
+        "y": 160,
+        "wires": [["tb_debug_cb"]]
+    },
+    {
+        "id": "tb_debug_cb",
+        "type": "debug",
+        "z": "tb_flow",
+        "name": "Callback Fired",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload.data",
+        "targetType": "msg",
+        "statusVal": "payload.data",
+        "statusType": "auto",
+        "x": 960,
+        "y": 160,
+        "wires": []
     },
     {
         "id": "tb_text_event",
@@ -239,7 +307,7 @@
         "data": "payload",
         "dataType": "jsonata",
         "x": 790,
-        "y": 220,
+        "y": 280,
         "wires": [["tb_debug"]]
     },
     {
@@ -256,7 +324,7 @@
         "statusVal": "payload.text",
         "statusType": "auto",
         "x": 970,
-        "y": 220,
+        "y": 280,
         "wires": []
     }
 ]
