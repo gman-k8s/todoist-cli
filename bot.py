@@ -175,9 +175,12 @@ def main() -> None:
         shopping_project_id = args.project_id or TODOIST_SHOPPING_PROJECT_ID
         if not shopping_project_id:
             try:
-                for p in api.get_projects():
-                    if p.name.lower() == "einkaufsliste":
-                        shopping_project_id = p.id
+                for page in api.get_projects():
+                    for p in page:
+                        if p.name.lower() == "einkaufsliste":
+                            shopping_project_id = p.id
+                            break
+                    if shopping_project_id:
                         break
             except Exception as e:
                 sys.exit(f"Error: could not fetch projects ({e})")
