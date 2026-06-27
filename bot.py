@@ -24,6 +24,7 @@ if not TODOIST_TOKEN:
     sys.exit("Error: TODOIST_TOKEN not set in .env")
 
 TODOIST_PROJECT_ID = os.environ.get("TODOIST_PROJECT_ID") or None
+TODOIST_SHOPPING_PROJECT_ID = os.environ.get("TODOIST_SHOPPING_PROJECT_ID") or None
 TODOIST_DUE_LANG = os.environ.get("TODOIST_DUE_LANG", "de")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or None
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
@@ -32,6 +33,21 @@ _GEMINI_PROMPT = (
     "You are a task assistant. Given a task title, prepend a single fitting emoji that represents the task.\n"
     "Return ONLY the emoji followed by a space and the original title. No explanation, no quotes, nothing else.\n"
     "Task: {title}"
+)
+
+_SHOPPING_PROMPT = (
+    "You parse a German shopping list voice/text instruction into individual grocery items.\n"
+    "For each item return an emoji and the clean item name (capitalized German noun, singular or plural as natural).\n"
+    "Strip filler phrases like 'setze ... auf die Einkaufsliste', 'füge ... hinzu', 'ich brauche', 'wir brauchen', etc.\n"
+    "List conjunctions ('und', 'sowie', 'außerdem') are item separators, not part of item names.\n"
+    "\n"
+    "Examples:\n"
+    '  "setze Milch auf die Einkaufsliste" -> [{"emoji":"🥛","item":"Milch"}]\n'
+    '  "setze Bananen, Milch und Brot auf die Einkaufsliste" -> [{"emoji":"🍌","item":"Bananen"},{"emoji":"🥛","item":"Milch"},{"emoji":"🍞","item":"Brot"}]\n'
+    '  "ich brauche Eier und Käse" -> [{"emoji":"🥚","item":"Eier"},{"emoji":"🧀","item":"Käse"}]\n'
+    "\n"
+    'Return ONLY minified JSON array: [{"emoji":"...","item":"..."}]. No markdown, no explanation.\n'
+    "Instruction: {text}"
 )
 
 _PARSE_PROMPT = (
@@ -107,6 +123,29 @@ def parse_text(text: str) -> tuple[str, str | None]:
         return text, None
 
 
+def parse_shopping(text: str) -> list[str]:
+    """Parse German shopping list text into emoji-prefixed item names."""
+    if not GOOGLE_API_KEY:
+        sys.exit("Error: --shopping requires GOOGLE_API_KEY")
+    try:
+        raw = _gemini_text(_SHOPPING_PROMPT.format(text=text))
+        if not raw:
+            raise ValueError("empty response")
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+        entries = json.loads(raw)
+        items = []
+        for entry in entries:
+            item = (entry.get("item") or "").strip()
+            emoji = (entry.get("emoji") or "").strip()
+            if item:
+                items.append(f"{emoji} {item}" if emoji else item)
+        if not items:
+            raise ValueError("no items parsed")
+        return items
+    except Exception as e:
+        sys.exit(f"Error: shopping parse failed ({e})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Add a Todoist task from the CLI.")
     parser.add_argument("--title", help="Task title / content")
@@ -115,25 +154,56 @@ def main() -> None:
         "--text",
         help="Freeform instruction; Gemini extracts title + due (e.g. voice transcript)",
     )
+    parser.add_argument(
+        "--shopping",
+        help="German shopping list text; Gemini extracts items, adds each to shopping project",
+    )
     parser.add_argument("--project-id", default=None, help="Todoist project ID (overrides .env)")
     args = parser.parse_args()
 
-    if not args.title and not args.text:
-        parser.error("one of --title or --text is required")
-    if args.title and args.text:
-        parser.error("--title and --text are mutually exclusive")
+    modes = [m for m in (args.title, args.text, args.shopping) if m]
+    if not modes:
+        parser.error("one of --title, --text, or --shopping is required")
+    if len(modes) > 1:
+        parser.error("--title, --text, and --shopping are mutually exclusive")
+
+    api = TodoistAPI(TODOIST_TOKEN)
+
+    if args.shopping:
+        items = parse_shopping(args.shopping)
+
+        shopping_project_id = args.project_id or TODOIST_SHOPPING_PROJECT_ID
+        if not shopping_project_id:
+            try:
+                projects = api.get_projects()
+                for p in projects:
+                    if p.name.lower() == "einkaufsliste":
+                        shopping_project_id = p.id
+                        break
+            except Exception as e:
+                sys.exit(f"Error: could not fetch projects ({e})")
+        if not shopping_project_id:
+            sys.exit("Error: project 'Einkaufsliste' not found. Set TODOIST_SHOPPING_PROJECT_ID in .env or create the project.")
+
+        created = []
+        for title in items:
+            try:
+                task = api.add_task(content=title, project_id=shopping_project_id)
+                created.append(task.content)
+            except Exception as e:
+                sys.exit(f"Error: failed to add '{title}': {e}")
+
+        print(f"Einkaufsliste: {', '.join(created)}")
+        return
 
     project_id = args.project_id or TODOIST_PROJECT_ID
 
     if args.text:
-        # parse_text already assigns the emoji in the same Gemini call
         title, parsed_due = parse_text(args.text)
         due = args.due or parsed_due
     else:
         title = enrich_title(args.title)
         due = args.due
-
-    api = TodoistAPI(TODOIST_TOKEN)
 
     kwargs: dict = {"content": title}
     if project_id:
