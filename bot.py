@@ -175,10 +175,7 @@ def main() -> None:
         shopping_project_id = args.project_id or TODOIST_SHOPPING_PROJECT_ID
         if not shopping_project_id:
             try:
-                raw = api.get_projects()
-                # 2.x: list[Project]; 3.x+: ([Project,...], cursor) as tuple or list
-                project_list = raw[0] if (raw and isinstance(raw[0], list)) else raw
-                for p in project_list:
+                for p in api.get_projects():
                     if p.name.lower() == "einkaufsliste":
                         shopping_project_id = p.id
                         break
