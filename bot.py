@@ -175,8 +175,10 @@ def main() -> None:
         shopping_project_id = args.project_id or TODOIST_SHOPPING_PROJECT_ID
         if not shopping_project_id:
             try:
-                projects = api.get_projects()
-                for p in projects:
+                raw = api.get_projects()
+                # todoist-api-python ≥3.x returns (results, cursor); 2.x returns list directly
+                project_list = raw[0] if isinstance(raw, tuple) else raw
+                for p in project_list:
                     if p.name.lower() == "einkaufsliste":
                         shopping_project_id = p.id
                         break
