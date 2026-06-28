@@ -68,7 +68,24 @@
         "filterReceiverNodeId": false,
         "x": 110,
         "y": 220,
-        "wires": [["tb_switch"]]
+        "wires": [["tb_switch", "tb_debug_rx"]]
+    },
+    {
+        "id": "tb_debug_rx",
+        "type": "debug",
+        "z": "tb_flow",
+        "name": "RX Raw",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "payload.type",
+        "statusType": "msg",
+        "x": 270,
+        "y": 160,
+        "wires": []
     },
     {
         "id": "tb_switch",
@@ -177,8 +194,8 @@
         "type": "function",
         "z": "tb_flow",
         "name": "Save Meta + Prep getFile",
-        "func": "const from = msg.originalMessage.from || {};\n\nflow.set('voice_meta', {\n    chatId: msg.payload.chatId,\n    userId: from.id,\n    firstName: from.first_name || '',\n    lastName: from.last_name || '',\n    messageId: msg.payload.messageId\n});\n\nconst token = flow.get('telegram_token');\nconst fileId = msg.payload.content.file_id;\n\nmsg.url = `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`;\nmsg.method = 'GET';\n\nnode.status({fill:'yellow', shape:'ring', text:'transcribing...'});\nreturn msg;",
-        "outputs": 1,
+        "func": "const from = msg.originalMessage.from || {};\n\nflow.set('voice_meta', {\n    chatId: msg.payload.chatId,\n    userId: from.id,\n    firstName: from.first_name || '',\n    lastName: from.last_name || '',\n    messageId: msg.payload.messageId\n});\n\nconst token = flow.get('telegram_token');\nnode.status({fill:'yellow', shape:'ring', text:'transcribing...'});\n\n// Newer library versions: content is a file_id string + weblink is pre-built\nif (msg.payload.weblink) {\n    msg.url = msg.payload.weblink;\n    return [msg, null]; // skip getFile, go direct to download\n}\n\n// Older library versions: content is a voice object with file_id\nconst content = msg.payload.content;\nconst fileId = (typeof content === 'string') ? content\n             : (content && content.file_id) ? content.file_id\n             : (content && content.voice && content.voice.file_id) ? content.voice.file_id\n             : null;\nif (!fileId) {\n    node.error('voice: cannot find file_id in payload', msg);\n    return null;\n}\nmsg.url = `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`;\nreturn [null, msg]; // use getFile path",
+        "outputs": 2,
         "timeout": 30,
         "noerr": 0,
         "initialize": "",
@@ -186,7 +203,7 @@
         "libs": [],
         "x": 170,
         "y": 400,
-        "wires": [["tb_http_getfile"]]
+        "wires": [["tb_http_dl"], ["tb_http_getfile"]]
     },
     {
         "id": "tb_http_getfile",
