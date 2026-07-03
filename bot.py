@@ -26,6 +26,7 @@ if not TODOIST_TOKEN:
 TODOIST_PROJECT_ID = os.environ.get("TODOIST_PROJECT_ID") or None
 TODOIST_SHOPPING_PROJECT_ID = os.environ.get("TODOIST_SHOPPING_PROJECT_ID") or None
 TODOIST_DUE_LANG = os.environ.get("TODOIST_DUE_LANG", "de")
+TODOIST_DEFAULT_DUE = os.environ.get("TODOIST_DEFAULT_DUE") or None
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or None
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
@@ -202,10 +203,10 @@ def main() -> None:
 
     if args.text:
         title, parsed_due = parse_text(args.text)
-        due = args.due or parsed_due
+        due = args.due or parsed_due or TODOIST_DEFAULT_DUE
     else:
         title = enrich_title(args.title)
-        due = args.due
+        due = args.due or TODOIST_DEFAULT_DUE
 
     kwargs: dict = {"content": title}
     if project_id:
