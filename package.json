@@ -1,0 +1,7 @@
+{
+  "name": "todoist-cli-node-red-functions",
+  "private": true,
+  "scripts": {
+    "test": "node --test node-red-functions/test/*.test.js"
+  }
+}

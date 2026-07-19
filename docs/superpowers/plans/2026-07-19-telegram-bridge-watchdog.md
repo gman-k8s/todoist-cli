@@ -77,7 +77,7 @@ const apiKey = global.get('gemini_api_key');\nconst model = global.get('gemini_m
 Run:
 ```bash
 python3 -m json.tool node-red-telegram-bridge.json > /dev/null && echo "valid json"
-grep -c "flow\.\(get\|set\)('telegram_token'\|'gemini_api_key'\|'gemini_model'" node-red-telegram-bridge.json
+grep -c "flow\.\(get\|set\)(\('telegram_token'\|'gemini_api_key'\|'gemini_model'\)" node-red-telegram-bridge.json
 ```
 Expected: `valid json` printed, and the grep count is `0`.
 
