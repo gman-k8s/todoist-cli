@@ -90,7 +90,7 @@ pattern used by `automation.telegram_smart_router`:
 
 - **`automation.telegram_bridge_recovery_failed`**
   - Trigger: event `telegram_bridge_recovery_failed`
-  - Action: `notify.aiden_2` (HA companion app push, not Telegram — Telegram
+  - Action: `notify.mobile_app_aiden_2` (HA companion app push, not Telegram — Telegram
     may still be unreachable in this case) — "⚠️ Telegram bridge stuck,
     auto-recovery failed — needs manual reconnect in Node-RED."
 

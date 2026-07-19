@@ -4,7 +4,7 @@
 
 **Goal:** Detect a silently-hung Telegram long-poll in the Node-RED bridge, auto-recover it by toggling just the bot node, and notify the user (Telegram on success, HA app push on failure).
 
-**Architecture:** A new "Watchdog" tab in `node-red-telegram-bridge.json` runs a self-scheduling timer that actively probes Telegram's `getUpdates` endpoint (409 = healthy, 200 = dead — Telegram only allows one long-poll session per token, so this is a definitive signal, not a heuristic). On a dead reading it uses Node-RED's local Admin API to disable and re-enable the `tb_bot_cfg` node, re-probes, and fires an HA event reporting success or failure. Two new HA automations turn those events into a Telegram message (success) or an `notify.aiden_2` push (failure — Telegram may still be down in that case). The tricky state-machine and HTTP-status logic is extracted into small, unit-tested plain JS files before being inlined into the Node-RED function nodes (Node-RED's sandboxed functions can't `require()` local project files, so the tested source and the deployed copy are kept in sync by hand — each embedding step says exactly what to copy).
+**Architecture:** A new "Watchdog" tab in `node-red-telegram-bridge.json` runs a self-scheduling timer that actively probes Telegram's `getUpdates` endpoint (409 = healthy, 200 = dead — Telegram only allows one long-poll session per token, so this is a definitive signal, not a heuristic). On a dead reading it uses Node-RED's local Admin API to disable and re-enable the `tb_bot_cfg` node, re-probes, and fires an HA event reporting success or failure. Two new HA automations turn those events into a Telegram message (success) or an `notify.mobile_app_aiden_2` push (failure — Telegram may still be down in that case). The tricky state-machine and HTTP-status logic is extracted into small, unit-tested plain JS files before being inlined into the Node-RED function nodes (Node-RED's sandboxed functions can't `require()` local project files, so the tested source and the deployed copy are kept in sync by hand — each embedding step says exactly what to copy).
 
 **Tech Stack:** Node-RED flow JSON (hand-authored, matches existing repo convention), Node.js built-in test runner (`node --test`, no new dependencies — Node 26 is already on this machine), Home Assistant automations via the `ha_config_set_automation` MCP tool.
 
@@ -15,7 +15,7 @@
 - Recovery must touch only the `tb_bot_cfg` node — no other flow/tab may be disabled or redeployed.
 - Probe interval: 15 minutes normally, backs off to 60 minutes after a failed recovery attempt, resets to 15 minutes once healthy again.
 - Failure notification fires at most once per failure episode (no repeat spam on every hourly retry).
-- Recovery success → Telegram message via `rest_command.telegram_send` to chat_id `-1003579017248` (existing group chat, per `automation.telegram_smart_router`). Recovery failure → `notify.aiden_2` push (the only `notify.*` entity currently registered in this HA instance).
+- Recovery success → Telegram message via `rest_command.telegram_send` to chat_id `-1003579017248` (existing group chat, per `automation.telegram_smart_router`). Recovery failure → `notify.mobile_app_aiden_2` push (the mobile-app companion notify service for the "Aiden" device in this HA instance; corrected from `notify.aiden_2` after Task 6 found no service by that name in `ha_list_services(domain="notify")`).
 - `node-red-telegram-bridge.json` must remain valid JSON after every edit — validate with `python3 -m json.tool node-red-telegram-bridge.json > /dev/null` after every step that touches it.
 
 ---
@@ -891,7 +891,7 @@ Call `ha_config_set_automation` with:
     ],
     "actions": [
       {
-        "action": "notify.aiden_2",
+        "action": "notify.mobile_app_aiden_2",
         "data": {
           "title": "Todoist Bot",
           "message": "⚠️ Telegram bridge stuck, auto-recovery failed — needs manual reconnect in Node-RED."
@@ -945,7 +945,7 @@ Call (via HA MCP) `ha_call_service` with `ws_command="fire_event"` equivalent, o
 ```
 ha_call_service(domain="automation", service="trigger", target={"entity_id": "automation.telegram_bridge_recovery_failed"})
 ```
-Expected: a push notification "⚠️ Telegram bridge stuck, auto-recovery failed — needs manual reconnect in Node-RED." arrives on the "Aiden" device (`notify.aiden_2`).
+Expected: a push notification "⚠️ Telegram bridge stuck, auto-recovery failed — needs manual reconnect in Node-RED." arrives on the "Aiden" device (`notify.mobile_app_aiden_2`).
 
 - [ ] **Step 5: Restore real state**
 
