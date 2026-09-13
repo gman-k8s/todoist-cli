@@ -28,8 +28,9 @@ fi
 "$UV" pip install --python .venv/bin/python3 \
     "todoist-api-python>=2.1" \
     "python-dotenv>=1.0" \
-    "google-genai>=1.0"
+    "google-genai>=1.0" \
+    "requests>=2.31"
 
-chmod +x bot.py
+chmod +x bot.py digest.py
 
 echo "Done. .venv ready at $SCRIPT_DIR/.venv"

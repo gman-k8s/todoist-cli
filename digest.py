@@ -12,7 +12,9 @@ if os.path.realpath(sys.executable) != os.path.realpath(_venv_py):
     os.execv(_venv_py, [_venv_py] + sys.argv)
 
 import argparse
+import json
 from datetime import datetime, timezone
+import requests
 from dotenv import load_dotenv
 from todoist_api_python.api import TodoistAPI
 
@@ -24,6 +26,8 @@ if not TODOIST_TOKEN:
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or None
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
+
+STATE_FILE = os.path.join(_dir, ".digest_state.json")
 
 _COMMENT_PROMPT = (
     "Du kommentierst die heutige Erledigt-Liste einer Todoist-Liste auf Deutsch.\n"
@@ -62,7 +66,11 @@ def get_comment(task_titles: list[str]) -> str | None:
         return None
 
 
-def completed_today(api: TodoistAPI, day: datetime) -> list[str]:
+def completed_today_nonrecurring(api: TodoistAPI, day: datetime) -> list[str]:
+    """Todoist's completed-tasks-by-completion-date endpoint only ever covers
+    one-off tasks: completing a recurring task advances its due date instead
+    of archiving it, so it never shows up here. See completed_today_recurring
+    for that half of the picture."""
     local_midnight = day.replace(hour=0, minute=0, second=0, microsecond=0)
     local_end = day.replace(hour=23, minute=59, second=59, microsecond=999999)
     since_utc = local_midnight.astimezone(timezone.utc)
@@ -77,6 +85,54 @@ def completed_today(api: TodoistAPI, day: datetime) -> list[str]:
     except Exception as e:
         sys.exit(f"Error: failed to fetch completed tasks: {e}")
     return titles
+
+
+def fetch_active_items() -> list[dict]:
+    resp = requests.post(
+        "https://api.todoist.com/api/v1/sync",
+        headers={"Authorization": f"Bearer {TODOIST_TOKEN}"},
+        data={"sync_token": "*", "resource_types": '["items"]'},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("items", [])
+
+
+def load_state() -> dict:
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_state(state: dict) -> None:
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+def completed_today_recurring(
+    items: list[dict], prev_counts: dict[str, int]
+) -> tuple[list[str], dict[str, int]]:
+    """A recurring task never leaves the active item list; each finished
+    occurrence just bumps its completed_count. Diffing that counter against
+    the last run's snapshot is the only way to see today's recurring
+    completions, since Todoist's completed-tasks endpoints skip them
+    entirely. A task_id missing from prev_counts (first run, or a task
+    created since) is treated as unchanged, not as N new completions.
+    """
+    current_counts = {
+        item["id"]: item.get("completed_count", 0)
+        for item in items
+        if (item.get("due") or {}).get("is_recurring")
+    }
+    titles = []
+    for task_id, count in current_counts.items():
+        delta = count - prev_counts.get(task_id, count)
+        if delta > 0:
+            content = next(i["content"] for i in items if i["id"] == task_id)
+            titles.extend([content] * delta)
+    return titles, current_counts
 
 
 def build_message(task_titles: list[str]) -> str:
@@ -110,7 +166,28 @@ def main() -> None:
         day = datetime.now().astimezone()
 
     api = TodoistAPI(TODOIST_TOKEN)
-    task_titles = completed_today(api, day)
+    task_titles = completed_today_nonrecurring(api, day)
+
+    if args.date:
+        # Historical/test query: the recurring-completion tracker only knows
+        # "since the last real run", so it's meaningless here.
+        print(
+            "Note: --date only reflects one-off tasks; recurring completions "
+            "require the state-diff tracker and are always relative to 'now'.",
+            file=sys.stderr,
+        )
+    else:
+        items = fetch_active_items()
+        state = load_state()
+        recurring_titles, current_counts = completed_today_recurring(
+            items, state.get("completed_counts", {})
+        )
+        save_state({
+            "completed_counts": current_counts,
+            "last_run": datetime.now(timezone.utc).isoformat(),
+        })
+        task_titles += recurring_titles
+
     print(build_message(task_titles))
 
 
