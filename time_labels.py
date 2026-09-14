@@ -96,6 +96,11 @@ def _process_task(api: TodoistAPI, task, known_time_labels: list[str], idx: int,
 def main() -> None:
     parser = argparse.ArgumentParser(description="Zeitlabels interaktiv an offene Todoist-Tasks vergeben.")
     parser.add_argument("--filter", "-f", default=None, help="Regex; nur Tasks deren Titel matcht")
+    parser.add_argument(
+        "--missing-only",
+        action="store_true",
+        help="Nur Tasks ohne gültiges Zeitlabel berücksichtigen",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Nichts schreiben, nur anzeigen")
     args = parser.parse_args()
 
@@ -121,6 +126,9 @@ def main() -> None:
         except re.error as e:
             sys.exit(f"Error: ungültiges --filter Regex: {e}")
         tasks = [t for t in tasks if pattern.search(t.content)]
+
+    if args.missing_only:
+        tasks = [t for t in tasks if not any(is_valid_duration_label(l) for l in t.labels)]
 
     tasks.sort(key=lambda t: t.content.casefold())
 
