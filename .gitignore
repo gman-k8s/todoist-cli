@@ -1,3 +1,4 @@
 .env
 .venv
 .digest_state.json
+__pycache__/

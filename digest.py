@@ -8,7 +8,7 @@ _venv_py = os.path.join(_dir, ".venv", "bin", "python3")
 if not os.path.exists(_venv_py):
     sys.exit("Error: .venv not found. Run ./setup-venv.sh to install dependencies.")
 
-if os.path.realpath(sys.executable) != os.path.realpath(_venv_py):
+if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(_dir, ".venv")):
     os.execv(_venv_py, [_venv_py] + sys.argv)
 
 import argparse

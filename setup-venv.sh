@@ -29,8 +29,9 @@ fi
     "todoist-api-python>=2.1" \
     "python-dotenv>=1.0" \
     "google-genai>=1.0" \
-    "requests>=2.31"
+    "requests>=2.31" \
+    "InquirerPy>=0.3"
 
-chmod +x bot.py digest.py
+chmod +x bot.py digest.py time_labels.py
 
 echo "Done. .venv ready at $SCRIPT_DIR/.venv"

@@ -1,0 +1,26 @@
+Du hilfst dabei, aus einer Liste von Haushalts-Todos eine sinnvolle Auswahl für ein
+verfügbares Zeitfenster zu treffen.
+
+Zeitfenster: __BUDGET_MINUTES__ Minuten.
+
+Verfügbare Todos (Format: id | Titel (Dauer in Minuten, ggf. Fälligkeitsdatum)):
+__TASK_LIST__
+
+Wähle eine Teilmenge dieser Todos aus, die möglichst gut zum Zeitfenster passt:
+1. Die Summe der Dauern der ausgewählten Todos darf __BUDGET_MINUTES__ Minuten NICHT
+   überschreiten.
+2. Nutze das Zeitfenster möglichst gut aus (nicht unnötig viel Zeit ungenutzt lassen).
+3. Bevorzuge Todos, die bereits fällig sind oder bald fällig werden, gegenüber Todos
+   ohne oder mit weit entferntem Fälligkeitsdatum.
+4. Bevorzuge Kombinationen mit Synergien, z.B.:
+   - mehrere Wisch-/Putzaufgaben zusammen (gleiches Werkzeug/Putzmittel bleibt im
+     Einsatz)
+   - mehrere Aufgaben im selben Raum oder Stockwerk (steht oft im Titel, z.B. "OG1",
+     "Badezimmer", "Küche")
+   Erkenne solche Muster anhand der Titel.
+5. Wenn mehrere gleichwertige Kombinationen möglich sind, wähle die mit den stärksten
+   Synergien.
+
+Antworte AUSSCHLIESSLICH mit minifiziertem JSON in genau diesem Format, keine
+Code-Fences, keine Erklärung außerhalb des JSON:
+{"selected":[{"id":"<task-id>","group":"<kurzes Synergie-Tag, z.B. 'Bad' oder 'Wischen', oder null>"}],"note":"<ein kurzer, lockerer Satz auf Deutsch, der die Auswahl bzw. die Synergie erklärt>"}
