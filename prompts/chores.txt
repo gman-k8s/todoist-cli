@@ -3,16 +3,21 @@ verfügbares Zeitfenster zu treffen.
 
 Zeitfenster: __BUDGET_MINUTES__ Minuten.
 
-Verfügbare Todos (Format: id | Titel (Dauer in Minuten, ggf. Fälligkeitsdatum)):
+Verfügbare Todos, bereits in drei Prioritätsgruppen sortiert (Format je Zeile:
+id | Titel (Dauer in Minuten, ggf. Fälligkeitsdatum)):
 __TASK_LIST__
 
 Wähle eine Teilmenge dieser Todos aus, die möglichst gut zum Zeitfenster passt:
 1. Die Summe der Dauern der ausgewählten Todos darf __BUDGET_MINUTES__ Minuten NICHT
    überschreiten.
 2. Nutze das Zeitfenster möglichst gut aus (nicht unnötig viel Zeit ungenutzt lassen).
-3. Bevorzuge Todos, die bereits fällig sind oder bald fällig werden, gegenüber Todos
-   ohne oder mit weit entferntem Fälligkeitsdatum.
-4. Bevorzuge Kombinationen mit Synergien, z.B.:
+3. Priorität geht STRIKT vor Vollständigkeit: Fülle das Zeitfenster zuerst so gut wie
+   möglich mit Todos aus PRIORITÄT 1. Nur wenn danach noch sinnvoll Zeit übrig ist
+   (und nichts Passendes mehr aus PRIORITÄT 1 reinpasst), nimm Todos aus PRIORITÄT 2
+   dazu. PRIORITÄT 3 nur verwenden, wenn PRIORITÄT 1 und 2 das Zeitfenster nicht
+   ausschöpfen.
+4. Innerhalb einer Prioritätsgruppe (und beim Abwägen, ob sich ein Griff in die
+   nächste Gruppe lohnt) bevorzuge Kombinationen mit Synergien, z.B.:
    - mehrere Wisch-/Putzaufgaben zusammen (gleiches Werkzeug/Putzmittel bleibt im
      Einsatz)
    - mehrere Aufgaben im selben Raum oder Stockwerk (steht oft im Titel, z.B. "OG1",

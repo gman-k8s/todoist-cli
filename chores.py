@@ -14,6 +14,7 @@ if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(_dir, ".venv"))
 import argparse
 import json
 import re
+from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from todoist_api_python.api import TodoistAPI
 
@@ -30,6 +31,14 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
 PROMPT_FILE = os.path.join(_dir, "prompts", "chores.txt")
 
+NEAR_FUTURE_DAYS = 7
+
+_BUCKET_LABELS = {
+    1: "PRIORITÄT 1 – überfällig, heute fällig, oder ohne Fälligkeitsdatum",
+    2: "PRIORITÄT 2 – in den nächsten Tagen fällig",
+    3: "PRIORITÄT 3 – später fällig",
+}
+
 
 def _gemini_text(contents: str) -> str | None:
     if not GOOGLE_API_KEY:
@@ -40,18 +49,56 @@ def _gemini_text(contents: str) -> str | None:
     return response.text.strip()
 
 
+def _due_date(t) -> date | None:
+    if not t.due:
+        return None
+    # due.date is a plain date normally, but a datetime when the task has a
+    # specific time (e.g. "um 18 Uhr") — normalize to just the date.
+    d = t.due.date
+    return d.date() if isinstance(d, datetime) else d
+
+
+def _urgency_bucket(due: date | None) -> int:
+    if due is None:
+        return 1
+    today = date.today()
+    if due <= today:
+        return 1
+    if due <= today + timedelta(days=NEAR_FUTURE_DAYS):
+        return 2
+    return 3
+
+
+def _urgency_sort_key(t: dict) -> tuple:
+    """Most urgent first within a bucket: earlier due date first, tasks
+    without a due date last (they carry no signal for how stale they are)."""
+    return (t["bucket"], t["due"] is None, t["due"] or "")
+
+
+def _inbox_project_id(api: TodoistAPI) -> str:
+    for page in api.get_projects():
+        for p in page:
+            if p.is_inbox_project:
+                return p.id
+    sys.exit("Error: Inbox-Projekt nicht gefunden")
+
+
 def eligible_tasks(api: TodoistAPI) -> list[dict]:
-    tasks = [t for page in api.get_tasks() for t in page]
+    """Only the Inbox project — the Einkaufsliste project is out of scope."""
+    inbox_id = _inbox_project_id(api)
+    tasks = [t for page in api.get_tasks(project_id=inbox_id) for t in page]
     result = []
     for t in tasks:
         time_labels = [l for l in t.labels if is_valid_duration_label(l)]
         if not time_labels:
             continue
+        due = _due_date(t)
         result.append({
             "id": t.id,
             "content": t.content,
             "minutes": duration_minutes(time_labels[0]),
-            "due": t.due.date.isoformat() if t.due else None,
+            "due": due.isoformat() if due else None,
+            "bucket": _urgency_bucket(due),
         })
     return result
 
@@ -59,14 +106,27 @@ def eligible_tasks(api: TodoistAPI) -> list[dict]:
 def build_prompt(budget_minutes: int, tasks: list[dict]) -> str:
     with open(PROMPT_FILE, encoding="utf-8") as f:
         template = f.read()
-    lines = []
-    for t in tasks:
-        due = f", fällig: {t['due']}" if t["due"] else ""
-        lines.append(f"- {t['id']} | {t['content']} ({t['minutes']}min{due})")
+
+    sections = []
+    for bucket in (1, 2, 3):
+        bucket_tasks = sorted(
+            (t for t in tasks if t["bucket"] == bucket),
+            key=_urgency_sort_key,
+        )
+        if not bucket_tasks:
+            continue
+        lines = [
+            f"- {t['id']} | {t['content']} ({t['minutes']}min"
+            + (f", fällig: {t['due']}" if t["due"] else "")
+            + ")"
+            for t in bucket_tasks
+        ]
+        sections.append(f"{_BUCKET_LABELS[bucket]}:\n" + "\n".join(lines))
+
     return (
         template
         .replace("__BUDGET_MINUTES__", str(budget_minutes))
-        .replace("__TASK_LIST__", "\n".join(lines))
+        .replace("__TASK_LIST__", "\n\n".join(sections))
     )
 
 
@@ -94,7 +154,9 @@ def suggest(budget_minutes: int, tasks: list[dict]) -> tuple[list[dict], str]:
     ]
 
     # Safety net: don't blindly trust the model's arithmetic on the budget
-    # constraint — trim lowest-priority (last) picks until back under budget.
+    # constraint. Sort by urgency first so trimming drops the least urgent
+    # picks, not just whatever happened to come last in the model's JSON.
+    selected.sort(key=_urgency_sort_key)
     while selected and sum(t["minutes"] for t in selected) > budget_minutes:
         selected.pop()
 
