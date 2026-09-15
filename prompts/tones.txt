@@ -1,0 +1,10 @@
+# Ein Ton pro Zeile im Format "name: Beschreibung".
+# Beschreibung wird direkt in den Gemini-Prompt eingesetzt, um den
+# Schreibstil des Tages-Kommentars zu steuern. Jeden Lauf wird zufällig
+# eine Zeile gewählt. Zeilen mit "#" oder ohne ":" werden ignoriert.
+sassy: sarkastisch, frech, liebevoll-fies
+cold: distanziert, knapp, emotionslos, fast roboterhaft
+warm: herzlich, ermutigend, liebevoll
+supporting: unterstützend, motivierend, aufbauend
+condescending: gönnerhaft, herablassend, leicht überheblich
+funny: witzig, humorvoll, mit einem Wortspiel

@@ -13,6 +13,7 @@ if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(_dir, ".venv"))
 
 import argparse
 import json
+import random
 from datetime import datetime, timezone
 import requests
 from dotenv import load_dotenv
@@ -28,10 +29,11 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or None
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
 STATE_FILE = os.path.join(_dir, ".digest_state.json")
+TONES_FILE = os.path.join(_dir, "prompts", "tones.txt")
 
 _COMMENT_PROMPT = (
     "Du kommentierst die heutige Erledigt-Liste einer Todoist-Liste auf Deutsch.\n"
-    "Schreib einen kurzen (ein Satz), sarkastischen, liebevoll-fiesen (\"sassy\") Kommentar dazu.\n"
+    "Schreib einen kurzen (ein Satz) Kommentar dazu, im folgenden Ton: {tone}.\n"
     "Nimm wenn sinnvoll konkret Bezug auf die Aufgaben.\n"
     "Keine Emojis, keine Anführungszeichen, keine Erklärung, nur der Kommentar.\n"
     "\n"
@@ -40,9 +42,26 @@ _COMMENT_PROMPT = (
 
 _COMMENT_PROMPT_EMPTY = (
     "Der Nutzer hat heute noch kein einziges Todo aus seiner Todoist-Liste erledigt.\n"
-    "Schreib einen kurzen (ein Satz), sarkastischen, liebevoll-fiesen (\"sassy\") Kommentar auf Deutsch dazu.\n"
+    "Schreib einen kurzen (ein Satz) Kommentar auf Deutsch dazu, im folgenden Ton: {tone}.\n"
     "Keine Emojis, keine Anführungszeichen, keine Erklärung, nur der Kommentar."
 )
+
+_DEFAULT_TONE = ("sassy", "sarkastisch, frech, liebevoll-fies")
+
+
+def load_tones() -> dict[str, str]:
+    tones = {}
+    try:
+        with open(TONES_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or ":" not in line:
+                    continue
+                name, _, desc = line.partition(":")
+                tones[name.strip()] = desc.strip()
+    except FileNotFoundError:
+        pass
+    return tones or dict([_DEFAULT_TONE])
 
 
 def _gemini_text(contents: str) -> str | None:
@@ -55,11 +74,15 @@ def _gemini_text(contents: str) -> str | None:
 
 
 def get_comment(task_titles: list[str]) -> str | None:
+    tone_name, tone_desc = random.choice(list(load_tones().items()))
+    print(f"Ton des Tages: {tone_name}", file=sys.stderr)
     try:
         if task_titles:
-            prompt = _COMMENT_PROMPT.format(tasks="\n".join(f"- {t}" for t in task_titles))
+            prompt = _COMMENT_PROMPT.format(
+                tasks="\n".join(f"- {t}" for t in task_titles), tone=tone_desc
+            )
         else:
-            prompt = _COMMENT_PROMPT_EMPTY
+            prompt = _COMMENT_PROMPT_EMPTY.format(tone=tone_desc)
         return _gemini_text(prompt)
     except Exception as e:
         print(f"Warning: Gemini commentary unavailable ({e})", file=sys.stderr)
