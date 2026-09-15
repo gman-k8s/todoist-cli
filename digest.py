@@ -19,6 +19,8 @@ import requests
 from dotenv import load_dotenv
 from todoist_api_python.api import TodoistAPI
 
+from duration import is_valid_duration_label, duration_minutes
+
 load_dotenv(os.path.join(_dir, ".env"))
 
 TODOIST_TOKEN = os.environ.get("TODOIST_TOKEN")
@@ -34,10 +36,12 @@ TONES_FILE = os.path.join(_dir, "prompts", "tones.txt")
 _COMMENT_PROMPT = (
     "Du kommentierst die heutige Erledigt-Liste einer Todoist-Liste auf Deutsch.\n"
     "Schreib einen kurzen (ein Satz) Kommentar dazu, im folgenden Ton: {tone}.\n"
-    "Nimm wenn sinnvoll konkret Bezug auf die Aufgaben.\n"
+    "Nimm wenn sinnvoll konkret Bezug auf die Aufgaben und auf den Zeitaufwand.\n"
     "Keine Emojis, keine Anführungszeichen, keine Erklärung, nur der Kommentar.\n"
     "\n"
     "Erledigte Aufgaben heute:\n{tasks}\n"
+    "\n"
+    "Zeitaufwand: {time_info}\n"
 )
 
 _COMMENT_PROMPT_EMPTY = (
@@ -77,13 +81,35 @@ def _gemini_text(contents: str) -> str | None:
     return response.text.strip()
 
 
-def get_comment(task_titles: list[str]) -> str | None:
+def _task_minutes(labels: list[str]) -> int | None:
+    for label in labels:
+        if is_valid_duration_label(label):
+            return duration_minutes(label)
+    return None
+
+
+def _time_info_text(task_items: list[dict]) -> str:
+    timed = [t for t in task_items if t["minutes"] is not None]
+    if not timed:
+        return "unbekannt, keine der Aufgaben hatte ein Zeitlabel"
+    total = sum(t["minutes"] for t in timed)
+    if len(timed) < len(task_items):
+        return f"ca. {total} Minuten ({len(timed)} von {len(task_items)} Aufgaben hatten ein Zeitlabel)"
+    return f"ca. {total} Minuten"
+
+
+def get_comment(task_items: list[dict]) -> str | None:
     tone_name, (tone_emoji, tone_desc) = random.choice(list(load_tones().items()))
     print(f"Ton des Tages: {tone_name}", file=sys.stderr)
     try:
-        if task_titles:
+        if task_items:
+            tasks_text = "\n".join(
+                f"- {t['content']}"
+                + (f" ({t['minutes']}min)" if t["minutes"] is not None else " (Zeit unbekannt)")
+                for t in task_items
+            )
             prompt = _COMMENT_PROMPT.format(
-                tasks="\n".join(f"- {t}" for t in task_titles), tone=tone_desc
+                tasks=tasks_text, time_info=_time_info_text(task_items), tone=tone_desc
             )
         else:
             prompt = _COMMENT_PROMPT_EMPTY.format(tone=tone_desc)
@@ -94,7 +120,7 @@ def get_comment(task_titles: list[str]) -> str | None:
         return None
 
 
-def completed_today_nonrecurring(api: TodoistAPI, day: datetime) -> list[str]:
+def completed_today_nonrecurring(api: TodoistAPI, day: datetime) -> list[dict]:
     """Todoist's completed-tasks-by-completion-date endpoint only ever covers
     one-off tasks: completing a recurring task advances its due date instead
     of archiving it, so it never shows up here. See completed_today_recurring
@@ -104,15 +130,17 @@ def completed_today_nonrecurring(api: TodoistAPI, day: datetime) -> list[str]:
     since_utc = local_midnight.astimezone(timezone.utc)
     until_utc = local_end.astimezone(timezone.utc)
 
-    titles = []
+    items = []
     try:
         for page in api.get_completed_tasks_by_completion_date(
             since=since_utc, until=until_utc, limit=200
         ):
-            titles.extend(t.content for t in page)
+            items.extend(
+                {"content": t.content, "minutes": _task_minutes(t.labels)} for t in page
+            )
     except Exception as e:
         sys.exit(f"Error: failed to fetch completed tasks: {e}")
-    return titles
+    return items
 
 
 def fetch_active_items() -> list[dict]:
@@ -141,7 +169,7 @@ def save_state(state: dict) -> None:
 
 def completed_today_recurring(
     items: list[dict], prev_counts: dict[str, int]
-) -> tuple[list[str], dict[str, int]]:
+) -> tuple[list[dict], dict[str, int]]:
     """A recurring task never leaves the active item list; each finished
     occurrence just bumps its completed_count. Diffing that counter against
     the last run's snapshot is the only way to see today's recurring
@@ -154,25 +182,37 @@ def completed_today_recurring(
         for item in items
         if (item.get("due") or {}).get("is_recurring")
     }
-    titles = []
+    result = []
     for task_id, count in current_counts.items():
         delta = count - prev_counts.get(task_id, count)
         if delta > 0:
-            content = next(i["content"] for i in items if i["id"] == task_id)
-            titles.extend([content] * delta)
-    return titles, current_counts
+            item = next(i for i in items if i["id"] == task_id)
+            entry = {"content": item["content"], "minutes": _task_minutes(item.get("labels", []))}
+            result.extend([entry] * delta)
+    return result, current_counts
 
 
-def build_message(task_titles: list[str]) -> str:
-    count = len(task_titles)
+def build_message(task_items: list[dict]) -> str:
+    count = len(task_items)
     if count == 0:
         header = "📋 Heute wurde noch nichts erledigt."
     else:
-        lines = "\n".join(f"• {t}" for t in task_titles)
+        lines = "\n".join(
+            f"• {t['content']}" + (f" ({t['minutes']}min)" if t["minutes"] is not None else "")
+            for t in task_items
+        )
         noun = "Todo" if count == 1 else "Todos"
-        header = f"📋 Heute wurden {count} {noun} erledigt:\n{lines}"
+        timed = [t for t in task_items if t["minutes"] is not None]
+        if timed:
+            total = sum(t["minutes"] for t in timed)
+            suffix = f" — ca. {total}min Hausarbeit"
+            if len(timed) < count:
+                suffix += f" ({len(timed)}/{count} mit Zeitlabel)"
+        else:
+            suffix = ""
+        header = f"📋 Heute wurden {count} {noun} erledigt{suffix}:\n{lines}"
 
-    comment = get_comment(task_titles)
+    comment = get_comment(task_items)
     return f"{header}\n\n{comment}" if comment else header
 
 
@@ -194,7 +234,7 @@ def main() -> None:
         day = datetime.now().astimezone()
 
     api = TodoistAPI(TODOIST_TOKEN)
-    task_titles = completed_today_nonrecurring(api, day)
+    task_items = completed_today_nonrecurring(api, day)
 
     if args.date:
         # Historical/test query: the recurring-completion tracker only knows
@@ -207,16 +247,16 @@ def main() -> None:
     else:
         items = fetch_active_items()
         state = load_state()
-        recurring_titles, current_counts = completed_today_recurring(
+        recurring_items, current_counts = completed_today_recurring(
             items, state.get("completed_counts", {})
         )
         save_state({
             "completed_counts": current_counts,
             "last_run": datetime.now(timezone.utc).isoformat(),
         })
-        task_titles += recurring_titles
+        task_items += recurring_items
 
-    print(build_message(task_titles))
+    print(build_message(task_items))
 
 
 if __name__ == "__main__":
