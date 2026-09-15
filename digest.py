@@ -46,19 +46,23 @@ _COMMENT_PROMPT_EMPTY = (
     "Keine Emojis, keine Anführungszeichen, keine Erklärung, nur der Kommentar."
 )
 
-_DEFAULT_TONE = ("sassy", "sarkastisch, frech, liebevoll-fies")
+_DEFAULT_TONE = ("sassy", ("😏", "sarkastisch, frech, liebevoll-fies"))
 
 
-def load_tones() -> dict[str, str]:
+def load_tones() -> dict[str, tuple[str, str]]:
+    """name -> (emoji, style description for the prompt)."""
     tones = {}
     try:
         with open(TONES_FILE, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#") or ":" not in line:
+                if not line or line.startswith("#"):
                     continue
-                name, _, desc = line.partition(":")
-                tones[name.strip()] = desc.strip()
+                parts = line.split(":", 2)
+                if len(parts) != 3:
+                    continue
+                name, emoji, desc = (p.strip() for p in parts)
+                tones[name] = (emoji, desc)
     except FileNotFoundError:
         pass
     return tones or dict([_DEFAULT_TONE])
@@ -74,7 +78,7 @@ def _gemini_text(contents: str) -> str | None:
 
 
 def get_comment(task_titles: list[str]) -> str | None:
-    tone_name, tone_desc = random.choice(list(load_tones().items()))
+    tone_name, (tone_emoji, tone_desc) = random.choice(list(load_tones().items()))
     print(f"Ton des Tages: {tone_name}", file=sys.stderr)
     try:
         if task_titles:
@@ -83,7 +87,8 @@ def get_comment(task_titles: list[str]) -> str | None:
             )
         else:
             prompt = _COMMENT_PROMPT_EMPTY.format(tone=tone_desc)
-        return _gemini_text(prompt)
+        text = _gemini_text(prompt)
+        return f"{tone_emoji} {text}" if text else None
     except Exception as e:
         print(f"Warning: Gemini commentary unavailable ({e})", file=sys.stderr)
         return None
