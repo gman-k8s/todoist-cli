@@ -14,6 +14,7 @@ if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(_dir, ".venv"))
 import argparse
 import json
 import random
+import time
 from datetime import datetime, timezone
 import requests
 from dotenv import load_dotenv
@@ -72,13 +73,19 @@ def load_tones() -> dict[str, tuple[str, str]]:
     return tones or dict([_DEFAULT_TONE])
 
 
-def _gemini_text(contents: str) -> str | None:
+def _gemini_text(contents: str, retries: int = 2, backoff_seconds: float = 3.0) -> str | None:
     if not GOOGLE_API_KEY:
         return None
     from google import genai
     client = genai.Client(api_key=GOOGLE_API_KEY)
-    response = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
-    return response.text.strip()
+    for attempt in range(retries + 1):
+        try:
+            response = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
+            return response.text.strip()
+        except Exception:
+            if attempt == retries:
+                raise
+            time.sleep(backoff_seconds)
 
 
 def _task_minutes(labels: list[str]) -> int | None:
