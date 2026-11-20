@@ -182,3 +182,13 @@ def test_gemini_client_has_timeout(monkeypatch):
     with patch("google.genai.Client", return_value=fake_client) as client:
         sd._gemini_text("p")
     assert client.call_args.kwargs["http_options"]["timeout"] == 20000
+
+
+def test_gemini_call_disables_afc(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "k")
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value.text = "{}"
+    with patch("google.genai.Client", return_value=fake_client):
+        sd._gemini_text("p")
+    config = fake_client.models.generate_content.call_args.kwargs["config"]
+    assert config.automatic_function_calling.disable is True

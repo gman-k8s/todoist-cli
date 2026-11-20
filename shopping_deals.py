@@ -38,9 +38,13 @@ def _gemini_text(prompt: str) -> str | None:
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY not set")
     from google import genai
+    from google.genai import types
     client = genai.Client(api_key=api_key, http_options={"timeout": GEMINI_TIMEOUT_MS})
     model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
-    return client.models.generate_content(model=model, contents=prompt).text
+    # no tools are used; disabling AFC also silences the library's AFC warning on stderr
+    config = types.GenerateContentConfig(
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+    return client.models.generate_content(model=model, contents=prompt, config=config).text
 
 
 def run_scraper(scraper_dir: Path, terms: list[str], force: bool, timeout: int = SCRAPER_TIMEOUT) -> dict:
