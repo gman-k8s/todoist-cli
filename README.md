@@ -58,11 +58,11 @@ shell_command:
   shopping_deals: "/config/todoist-cli/shopping_deals.py"
 ```
 
-- Automation 1: Sunday + Wednesday 07:30 → `shell_command.shopping_deals_warmup` (returns immediately, refreshes
+- Automation 1: Monday + Wednesday 07:30 → `shell_command.shopping_deals_warmup` (returns immediately, refreshes
   `output/deals/` in the scraper checkout).
-- Automation 2: Sunday + Wednesday 08:00 → `shell_command.shopping_deals` with `response_variable`, send
+- Automation 2: Monday + Wednesday 08:00 → `shell_command.shopping_deals` with `response_variable`, send
   `stdout` to Telegram.
-- Automation 3: Telegram text „angebote“ (HA event from the Node-RED bridge) → `shell_command.shopping_deals` →
+- Automation 3: Telegram command `/angebote` → `shell_command.shopping_deals` →
   `stdout` to Telegram. Only items not yet cached are fetched live (≈ 10 s each).
 
 Adjust the paths to where the repos live on the VM.
