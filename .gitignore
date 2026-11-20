@@ -2,3 +2,4 @@
 .venv
 .digest_state.json
 __pycache__/
+.shopping_history.json
