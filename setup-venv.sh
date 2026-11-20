@@ -33,6 +33,6 @@ fi
     "InquirerPy>=0.3" \
     "pytest>=8"
 
-chmod +x bot.py digest.py time_labels.py
+chmod +x bot.py digest.py time_labels.py shopping_deals.py
 
 echo "Done. .venv ready at $SCRIPT_DIR/.venv"

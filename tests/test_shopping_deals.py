@@ -1,0 +1,160 @@
+import json
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import shopping_deals as sd
+
+
+def deal(id, name, price=1.0, store="lidl", brand=None):
+    return {"id": id, "store": store, "brand": brand, "product_name": name, "price": price,
+            "original_price": None, "discount_pct": None, "valid_from": "2026-11-18",
+            "valid_to": "2099-11-23", "source": "marktguru", "ean": None}
+
+
+SCRAPER_JSON = {
+    "generated_at": "2026-11-20T08:00:00",
+    "terms": {
+        "milch": {"fetched": "x", "from_cache": True, "deals": [deal("m1", "Vollmilch"), deal("s1", "Milchschokolade")]},
+        "kaffee": {"fetched": "x", "from_cache": True, "deals": [deal("k1", "Kaffee Auslese", brand="Melitta")]},
+        "butter": {"fetched": "x", "from_cache": True, "deals": [deal("m1", "Vollmilch")]},
+    },
+    "warnings": [],
+}
+
+
+class FakeApi:
+    def __init__(self, open_titles, completed=()):
+        self.open_titles = open_titles
+        self.completed = list(completed)
+
+    def get_projects(self):
+        yield [SimpleNamespace(name="Einkaufsliste", id="9")]
+
+    def get_tasks(self, project_id=None, limit=None):
+        yield [SimpleNamespace(content=t) for t in self.open_titles]
+
+    def get_completed_tasks_by_completion_date(self, since, until, limit=None):
+        yield [t for t in self.completed if since <= t.completed_at <= until]
+
+
+def _completed_kaffee():
+    now = datetime.now(timezone.utc)
+    return [SimpleNamespace(id=str(i), content="☕ Kaffee", project_id="9", completed_at=now - timedelta(days=i + 1))
+            for i in range(3)]
+
+
+@pytest.fixture
+def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("TODOIST_TOKEN", "t")
+    monkeypatch.setenv("SUPERMARKET_SCRAPER_DIR", str(tmp_path / "scraper"))
+    monkeypatch.delenv("TODOIST_SHOPPING_PROJECT_ID", raising=False)
+    monkeypatch.delenv("SHOPPING_STAPLE_MIN_COUNT", raising=False)
+    monkeypatch.delenv("SHOPPING_STAPLE_WINDOW_DAYS", raising=False)
+    monkeypatch.setattr(sd, "HISTORY_FILE", tmp_path / "history.json")
+    return tmp_path
+
+
+def _run(argv, api, gemini=None, scraper=None):
+    with patch.object(sd, "TodoistAPI", return_value=api), \
+         patch.object(sd, "run_scraper", scraper or MagicMock(return_value=SCRAPER_JSON)), \
+         patch.object(sd, "_gemini_text", gemini or MagicMock(return_value='{"milch":["m1"],"kaffee":["k1"]}')):
+        return sd.main(argv)
+
+
+def test_run_scraper_builds_command(tmp_path):
+    done = subprocess.CompletedProcess([], 0, stdout=json.dumps(SCRAPER_JSON), stderr="")
+    with patch("shopping_deals.subprocess.run", return_value=done) as run:
+        sd.run_scraper(tmp_path, ["milch", "kaffee"], force=False)
+        sd.run_scraper(tmp_path, ["milch"], force=True)
+    first, second = run.call_args_list[0].args[0], run.call_args_list[1].args[0]
+    assert first[0] == str(tmp_path / ".venv/bin/python") and first[1] == str(tmp_path / "scraper.py")
+    assert first[2:] == ["--json", "--terms", "milch,kaffee"]
+    assert second[-1] == "--force"
+
+
+def test_run_scraper_nonzero_raises(tmp_path):
+    with patch("shopping_deals.subprocess.run", return_value=subprocess.CompletedProcess([], 1, "", "boom")):
+        with pytest.raises(RuntimeError):
+            sd.run_scraper(tmp_path, ["milch"], force=False)
+
+
+def test_run_scraper_invalid_json_raises(tmp_path):
+    with patch("shopping_deals.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "nope", "")):
+        with pytest.raises(RuntimeError):
+            sd.run_scraper(tmp_path, ["milch"], force=False)
+
+
+def test_terms_from_open_and_staples():
+    assert sd.search_terms(["🥛 Milch", "Äpfel, rot", "milch"], ["☕ Kaffee"]) == ["milch", "äpfel rot", "kaffee"]
+
+
+def test_collect_deals_dedupes():
+    assert [d["id"] for d in sd.collect_deals(SCRAPER_JSON)] == ["m1", "s1", "k1"]
+
+
+def test_gemini_happy_path_with_staple(env, capsys):
+    scraper = MagicMock(return_value=SCRAPER_JSON)
+    assert _run([], FakeApi(["🥛 Milch", "Brot"], _completed_kaffee()), scraper=scraper) == 0
+    out = capsys.readouterr().out
+    assert "🥛 Milch\n  LIDL  Vollmilch — 1,00€" in out
+    assert "Milchschokolade" not in out
+    assert "⭐ Stammartikel\n☕ Kaffee" in out
+    assert "Keine Angebote: Brot" in out
+    assert scraper.call_args.args[1] == ["milch", "brot", "kaffee"]
+    assert scraper.call_args.kwargs["force"] is False
+
+
+def test_gemini_failure_falls_back(env, capsys):
+    rc = _run([], FakeApi(["🥛 Milch"]), gemini=MagicMock(side_effect=RuntimeError("quota")))
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert out.rstrip("\n").endswith("(Abgleich ohne KI – Gemini nicht verfügbar)")
+    assert "Warnung:" in err
+
+
+def test_compare_prints_both(env, capsys):
+    gemini = MagicMock(return_value='{"milch":["m1"]}')
+    _run(["--matcher", "compare"], FakeApi(["🥛 Milch"]), gemini=gemini)
+    out = capsys.readouterr().out
+    assert "🛒 Abgleich: Gemini" in out and "🛒 Abgleich: Regex" in out
+    assert gemini.call_count == 1
+
+
+def test_force_passed_to_scraper(env):
+    scraper = MagicMock(return_value=SCRAPER_JSON)
+    _run(["--force", "--matcher", "regex"], FakeApi(["Milch"]), scraper=scraper)
+    assert scraper.call_args.kwargs["force"] is True
+
+
+def test_missing_scraper_dir(env, monkeypatch, capsys):
+    monkeypatch.delenv("SUPERMARKET_SCRAPER_DIR")
+    assert _run([], FakeApi(["Milch"])) == 1
+    assert "Fehler: SUPERMARKET_SCRAPER_DIR nicht gesetzt (.env)." in capsys.readouterr().err
+
+
+def test_scraper_failure_exit_1(env, capsys):
+    assert _run([], FakeApi(["Milch"]), scraper=MagicMock(side_effect=RuntimeError("x"))) == 1
+    assert "Fehler: Angebote konnten nicht geladen werden." in capsys.readouterr().err
+
+
+def test_empty_list_and_no_staples_skips_scraper(env, capsys):
+    scraper = MagicMock()
+    assert _run([], FakeApi([]), scraper=scraper) == 0
+    scraper.assert_not_called()
+    assert "Keine Angebote für deine Einkaufsliste gefunden." in capsys.readouterr().out
+
+
+def test_dry_run_does_not_save_history(env):
+    _run(["--dry-run"], FakeApi(["Milch"], _completed_kaffee()))
+    assert not (env / "history.json").exists()
+
+
+def test_history_saved_and_reused(env):
+    _run([], FakeApi(["Milch"], _completed_kaffee()))
+    data = json.loads((env / "history.json").read_text("utf-8"))
+    assert len(data["items"]["kaffee"]["completed"]) == 3
