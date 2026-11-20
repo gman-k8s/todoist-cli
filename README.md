@@ -33,7 +33,7 @@ How it works:
    are Stammartikel.
 3. Runs `$SUPERMARKET_SCRAPER_DIR/scraper.py --json --terms "<items>"` (search terms = scraper watchlist +
    open items + Stammartikel).
-4. Matches with one Gemini call (`GEMINI_MODEL`); on any Gemini error it falls back to regex matching and says so
+4. Matches with one Gemini call (`GEMINI_MODEL`, thinking level `GEMINI_THINKING_LEVEL`, default `low`: default thinking on Gemini 3.x flash exceeds HA's 60 s limit); on any Gemini error it falls back to regex matching and says so
    in the message. Regex rule: every item word must appear as a word or as the *end* of a compound
    („Vollmilch“ matches „Milch“, „Milchschokolade“ doesn't).
 

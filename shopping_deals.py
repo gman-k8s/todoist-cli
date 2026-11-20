@@ -47,9 +47,14 @@ def _gemini_text(prompt: str) -> str | None:
     from google.genai import types
     client = genai.Client(api_key=api_key, http_options={"timeout": GEMINI_TIMEOUT_MS})
     model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
+    # default thinking on gemini-3.x flash takes >60 s (HA's shell_command limit); "low" answers in seconds.
+    # Empty GEMINI_THINKING_LEVEL omits the setting for models without thinking support.
+    level = os.environ.get("GEMINI_THINKING_LEVEL", "low").strip()
+    thinking = types.ThinkingConfig(thinking_level=level.upper()) if level else None
     # no tools are used; disabling AFC also silences the library's AFC warning on stderr
     config = types.GenerateContentConfig(
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        thinking_config=thinking)
     return client.models.generate_content(model=model, contents=prompt, config=config).text
 
 

@@ -231,3 +231,30 @@ def test_skipped_terms_shown(env, capsys):
     scraper = MagicMock(return_value=dict(SCRAPER_JSON, skipped=["äpfel rot"]))
     _run(["--matcher", "regex"], FakeApi(["Milch", "Äpfel, rot"]), scraper=scraper)
     assert "Noch nicht geladen (kommt beim nächsten Lauf): Äpfel, rot" in capsys.readouterr().out
+
+
+def _gemini_config(monkeypatch, level=None):
+    monkeypatch.setenv("GOOGLE_API_KEY", "k")
+    if level is None:
+        monkeypatch.delenv("GEMINI_THINKING_LEVEL", raising=False)
+    else:
+        monkeypatch.setenv("GEMINI_THINKING_LEVEL", level)
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value.text = "{}"
+    with patch("google.genai.Client", return_value=fake_client):
+        sd._gemini_text("p")
+    return fake_client.models.generate_content.call_args.kwargs["config"]
+
+
+def test_gemini_thinking_level_low_by_default(monkeypatch):
+    # default thinking on gemini-3.x flash takes >60 s for this prompt (HA limit); "low" answers in ~3 s
+    assert _gemini_config(monkeypatch).thinking_config.thinking_level.value.lower() == "low"
+
+
+def test_gemini_thinking_level_from_env(monkeypatch):
+    assert _gemini_config(monkeypatch, "high").thinking_config.thinking_level.value.lower() == "high"
+
+
+def test_gemini_thinking_level_empty_disables_config(monkeypatch):
+    # models without thinking support (e.g. gemini-2.0-flash-lite) reject thinking_config
+    assert _gemini_config(monkeypatch, "").thinking_config is None
