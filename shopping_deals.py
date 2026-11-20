@@ -30,6 +30,12 @@ load_dotenv(os.path.join(_dir, ".env"))
 
 HISTORY_FILE = Path(_dir) / ".shopping_history.json"
 SCRAPER_TIMEOUT = 45  # stay below Home Assistant's 60 s shell_command limit
+DEADLINE_MARGIN = 15  # scraper stops starting new online fetches this many seconds before the timeout
+CACHE_ONLY_TIMEOUT = 10
+
+
+class ScraperTimeout(RuntimeError):
+    pass
 GEMINI_TIMEOUT_MS = 20000
 
 
@@ -47,12 +53,17 @@ def _gemini_text(prompt: str) -> str | None:
     return client.models.generate_content(model=model, contents=prompt, config=config).text
 
 
-def run_scraper(scraper_dir: Path, terms: list[str], force: bool, timeout: int = SCRAPER_TIMEOUT) -> dict:
+def run_scraper(scraper_dir: Path, terms: list[str], force: bool, timeout: int = SCRAPER_TIMEOUT,
+                deadline: float | None = None) -> dict:
     cmd = [str(scraper_dir / ".venv/bin/python"), str(scraper_dir / "scraper.py"),
            "--json", "--terms", ",".join(terms)] + (["--force"] if force else [])
+    if deadline is not None:
+        cmd += ["--deadline", f"{deadline:g}"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired) as e:
+    except subprocess.TimeoutExpired as e:
+        raise ScraperTimeout(f"scraper timed out after {timeout} s") from e
+    except OSError as e:
         raise RuntimeError(f"scraper failed: {e}") from e
     if proc.stderr:
         sys.stderr.write(proc.stderr)
@@ -129,11 +140,19 @@ def main(argv: list[str] | None = None) -> int:
         print(format_message([], [], {}, today))
         return 0
 
+    deadline = max(args.timeout - DEADLINE_MARGIN, 0)
     try:
-        deals = collect_deals(run_scraper(Path(scraper_dir), terms, force=args.force, timeout=args.timeout))
+        try:
+            data = run_scraper(Path(scraper_dir), terms, force=args.force, timeout=args.timeout, deadline=deadline)
+        except ScraperTimeout as e:
+            print(f"Warnung: {e}; verwende zwischengespeicherte Angebote", file=sys.stderr)
+            data = run_scraper(Path(scraper_dir), terms, force=False, timeout=CACHE_ONLY_TIMEOUT, deadline=0)
     except RuntimeError as e:
         print(f"Warnung: {e}", file=sys.stderr)
         return _fail("Angebote konnten nicht geladen werden.")
+    deals = collect_deals(data)
+    skipped = set(data.get("skipped") or [])
+    not_loaded = [t for t in open_titles + staples if set(search_terms([t], [])) & skipped]
 
     items = list(dict.fromkeys(normalize(t) for t in open_titles + staples))
 
@@ -147,17 +166,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.matcher == "compare":
         g, err = _gemini()
         print(format_message(open_titles, staples, g, today, ai_fallback=err is not None,
-                             header="🛒 Abgleich: Gemini"))
+                             header="🛒 Abgleich: Gemini", not_loaded=not_loaded))
         print()
-        print(format_message(open_titles, staples, regex_match(items, deals), today, header="🛒 Abgleich: Regex"))
+        print(format_message(open_titles, staples, regex_match(items, deals), today, header="🛒 Abgleich: Regex",
+                             not_loaded=not_loaded))
         return 0
 
     if args.matcher == "regex":
-        print(format_message(open_titles, staples, regex_match(items, deals), today))
+        print(format_message(open_titles, staples, regex_match(items, deals), today, not_loaded=not_loaded))
         return 0
 
     matches, err = _gemini()
-    print(format_message(open_titles, staples, matches, today, ai_fallback=err is not None))
+    print(format_message(open_titles, staples, matches, today, ai_fallback=err is not None, not_loaded=not_loaded))
     return 0
 
 

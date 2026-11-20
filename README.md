@@ -43,6 +43,11 @@ Required `.env`: `TODOIST_TOKEN`, `SUPERMARKET_SCRAPER_DIR`; `GOOGLE_API_KEY` fo
 
 Both repos checked out on the HA VM, `SUPERMARKET_SCRAPER_DIR` pointing to the scraper checkout there.
 
+HA kills a `shell_command` after 60 s. `shopping_deals.py` therefore passes `--deadline <timeout − 15 s>` to the
+scraper: once that budget is used up, remaining terms come from the cache (any age), and terms that were never
+cached are listed as „Noch nicht geladen (kommt beim nächsten Lauf)“. If the scraper still hits the hard timeout,
+a second cache-only call (`--deadline 0`) is made, so a message always goes out.
+
 HA kills a `shell_command` after 60 s. A cached run takes well under a second, but fetching online costs about
 10 s per search term (aktionspreis.de loads one page per offer), so a `--force` run with many terms does not fit.
 Therefore the scheduled run is split into a background warm-up and a fast cached run:

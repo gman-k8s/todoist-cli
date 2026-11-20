@@ -42,11 +42,15 @@ def _assemble(header: str, open_blocks: list[str], staple_blocks: list[str], foo
 
 
 def format_message(open_items: list[str], staples: list[str], matches: dict[str, list[dict]], today: date,
-                   *, ai_fallback: bool = False, header: str | None = None) -> str:
+                   *, ai_fallback: bool = False, header: str | None = None,
+                   not_loaded: list[str] | None = None) -> str:
     open_blocks = [_block(t, matches[normalize(t)]) for t in open_items if matches.get(normalize(t))]
     staple_blocks = [_block(t, matches[normalize(t)]) for t in staples if matches.get(normalize(t))]
-    missing = [strip_emoji(t) for t in open_items if not matches.get(normalize(t))]
-    tail = [_FALLBACK_NOTE] if ai_fallback else []
+    pending = set(not_loaded or [])
+    missing = [strip_emoji(t) for t in open_items if not matches.get(normalize(t)) and t not in pending]
+    tail = ([f"Noch nicht geladen (kommt beim nächsten Lauf): {', '.join(strip_emoji(t) for t in not_loaded)}"]
+            if not_loaded else [])
+    tail += [_FALLBACK_NOTE] if ai_fallback else []
 
     if not open_blocks and not staple_blocks:
         return "\n\n".join(([header] if header else []) + [_NOTHING] + tail)

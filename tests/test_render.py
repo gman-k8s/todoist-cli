@@ -82,3 +82,15 @@ def test_truncation():
     shown = sum(1 for i in items if f"\n{i}\n" in out)
     assert out.endswith(f"… und {60 - shown} weitere")
     assert 0 < shown < 60
+
+
+def test_not_loaded_line():
+    m = {"milch": SPEC_MATCHES["milch"], "brot": [], "mandeln": []}
+    out = format_message(["🥛 Milch", "Brot", "🌰 Mandeln"], [], m, TODAY, not_loaded=["🌰 Mandeln"])
+    assert "Keine Angebote: Brot\n\nNoch nicht geladen (kommt beim nächsten Lauf): Mandeln" in out
+
+
+def test_not_loaded_without_any_matches():
+    out = format_message(["🌰 Mandeln"], [], {}, TODAY, not_loaded=["🌰 Mandeln"])
+    assert out == ("Keine Angebote für deine Einkaufsliste gefunden.\n\n"
+                   "Noch nicht geladen (kommt beim nächsten Lauf): Mandeln")

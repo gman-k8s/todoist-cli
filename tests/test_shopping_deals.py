@@ -192,3 +192,42 @@ def test_gemini_call_disables_afc(monkeypatch):
         sd._gemini_text("p")
     config = fake_client.models.generate_content.call_args.kwargs["config"]
     assert config.automatic_function_calling.disable is True
+
+
+def test_run_scraper_passes_deadline(tmp_path):
+    done = subprocess.CompletedProcess([], 0, stdout=json.dumps(SCRAPER_JSON), stderr="")
+    with patch("shopping_deals.subprocess.run", return_value=done) as run:
+        sd.run_scraper(tmp_path, ["milch"], force=False, timeout=45, deadline=30)
+    cmd = run.call_args.args[0]
+    assert cmd[cmd.index("--deadline") + 1] == "30"
+
+
+def test_run_scraper_timeout_raises_scraper_timeout(tmp_path):
+    with patch("shopping_deals.subprocess.run", side_effect=subprocess.TimeoutExpired("x", 45)):
+        with pytest.raises(sd.ScraperTimeout):
+            sd.run_scraper(tmp_path, ["milch"], force=False)
+
+
+def test_deadline_derived_from_timeout(env):
+    scraper = MagicMock(return_value=SCRAPER_JSON)
+    _run(["--matcher", "regex"], FakeApi(["Milch"]), scraper=scraper)
+    assert scraper.call_args.kwargs["deadline"] == 30
+    _run(["--matcher", "regex", "--timeout", "900"], FakeApi(["Milch"]), scraper=scraper)
+    assert scraper.call_args.kwargs["deadline"] == 885
+
+
+def test_timeout_retries_cache_only(env, capsys):
+    scraper = MagicMock(side_effect=[sd.ScraperTimeout("slow"), dict(SCRAPER_JSON, skipped=["brot"])])
+    rc = _run(["--matcher", "regex"], FakeApi(["🥛 Milch", "Brot"]), scraper=scraper)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert scraper.call_args_list[1].kwargs["deadline"] == 0
+    assert "🥛 Milch\n  LIDL  Vollmilch" in out
+    assert "Noch nicht geladen (kommt beim nächsten Lauf): Brot" in out
+    assert "Keine Angebote: Brot" not in out
+
+
+def test_skipped_terms_shown(env, capsys):
+    scraper = MagicMock(return_value=dict(SCRAPER_JSON, skipped=["äpfel rot"]))
+    _run(["--matcher", "regex"], FakeApi(["Milch", "Äpfel, rot"]), scraper=scraper)
+    assert "Noch nicht geladen (kommt beim nächsten Lauf): Äpfel, rot" in capsys.readouterr().out
