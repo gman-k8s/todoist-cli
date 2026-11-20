@@ -22,6 +22,7 @@ Telegram-sized message (≤ 4000 chars, max. 3 deals per item, cheapest first).
 .venv/bin/python3 shopping_deals.py --matcher regex     # rule-based matching, no Gemini
 .venv/bin/python3 shopping_deals.py --matcher compare   # print Gemini and regex results one after another
 .venv/bin/python3 shopping_deals.py --dry-run           # don't save the learning history
+.venv/bin/python3 shopping_deals.py --timeout 900       # scraper time limit in s (default 45, below HA's 60 s)
 ```
 
 How it works:
@@ -48,7 +49,7 @@ Therefore the scheduled run is split into a background warm-up and a fast cached
 
 ```yaml
 shell_command:
-  shopping_deals_warmup: "nohup /config/todoist-cli/shopping_deals.py --force --matcher regex >/dev/null 2>&1 &"
+  shopping_deals_warmup: "nohup /config/todoist-cli/shopping_deals.py --force --matcher regex --timeout 900 >/dev/null 2>&1 &"
   shopping_deals: "/config/todoist-cli/shopping_deals.py"
 ```
 

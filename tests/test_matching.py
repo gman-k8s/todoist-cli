@@ -85,3 +85,8 @@ def test_gemini_match_uses_call():
     seen = []
     r = gemini_match(["milch"], [d("Milch", id="m")], lambda p: seen.append(p) or '{"milch":["m"]}')
     assert ids(r) == {"milch": ["m"]} and len(seen) == 1
+
+
+def test_parse_nested_lists_ignored():
+    deals = [d("A", id="a")]
+    assert ids(parse_gemini_response('{"x":[["a"], "a", 5]}', ["x"], deals)) == {"x": ["a"]}

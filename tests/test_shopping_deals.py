@@ -158,3 +158,27 @@ def test_history_saved_and_reused(env):
     _run([], FakeApi(["Milch"], _completed_kaffee()))
     data = json.loads((env / "history.json").read_text("utf-8"))
     assert len(data["items"]["kaffee"]["completed"]) == 3
+
+
+def test_scraper_timeout_default_and_flag(env):
+    scraper = MagicMock(return_value=SCRAPER_JSON)
+    _run(["--matcher", "regex"], FakeApi(["Milch"]), scraper=scraper)
+    assert scraper.call_args.kwargs["timeout"] == 45
+    _run(["--matcher", "regex", "--timeout", "900"], FakeApi(["Milch"]), scraper=scraper)
+    assert scraper.call_args.kwargs["timeout"] == 900
+
+
+def test_unexpected_gemini_error_falls_back(env, capsys):
+    with patch.object(sd, "gemini_match", side_effect=TypeError("weird")):
+        rc = _run([], FakeApi(["🥛 Milch"]))
+    assert rc == 0
+    assert "(Abgleich ohne KI – Gemini nicht verfügbar)" in capsys.readouterr().out
+
+
+def test_gemini_client_has_timeout(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "k")
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value.text = "{}"
+    with patch("google.genai.Client", return_value=fake_client) as client:
+        sd._gemini_text("p")
+    assert client.call_args.kwargs["http_options"]["timeout"] == 20000

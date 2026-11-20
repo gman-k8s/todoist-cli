@@ -29,7 +29,8 @@ from staples import compute_staples, fetch_completed, load_history, save_history
 load_dotenv(os.path.join(_dir, ".env"))
 
 HISTORY_FILE = Path(_dir) / ".shopping_history.json"
-SCRAPER_TIMEOUT = 300
+SCRAPER_TIMEOUT = 45  # stay below Home Assistant's 60 s shell_command limit
+GEMINI_TIMEOUT_MS = 20000
 
 
 def _gemini_text(prompt: str) -> str | None:
@@ -37,7 +38,7 @@ def _gemini_text(prompt: str) -> str | None:
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY not set")
     from google import genai
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options={"timeout": GEMINI_TIMEOUT_MS})
     model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite")
     return client.models.generate_content(model=model, contents=prompt).text
 
@@ -97,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="Angebote frisch online laden")
     parser.add_argument("--matcher", choices=["gemini", "regex", "compare"], default="gemini")
     parser.add_argument("--dry-run", action="store_true", help="Lern-Historie nicht speichern")
+    parser.add_argument("--timeout", type=int, default=SCRAPER_TIMEOUT,
+                        help=f"Max. Sekunden für den Scraper (Default {SCRAPER_TIMEOUT}; Warm-up z. B. 900)")
     args = parser.parse_args(argv)
 
     token = os.environ.get("TODOIST_TOKEN")
@@ -123,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        deals = collect_deals(run_scraper(Path(scraper_dir), terms, force=args.force))
+        deals = collect_deals(run_scraper(Path(scraper_dir), terms, force=args.force, timeout=args.timeout))
     except RuntimeError as e:
         print(f"Warnung: {e}", file=sys.stderr)
         return _fail("Angebote konnten nicht geladen werden.")
@@ -133,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     def _gemini():
         try:
             return gemini_match(items, deals, _gemini_text), None
-        except ValueError as e:
+        except Exception as e:  # any Gemini problem must fall back, never abort the run
             print(f"Warnung: Gemini-Abgleich fehlgeschlagen ({e})", file=sys.stderr)
             return regex_match(items, deals), e
 

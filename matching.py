@@ -58,7 +58,7 @@ def parse_gemini_response(raw: str, items: list[str], deals: list[dict]) -> dict
     result = {}
     for item in items:
         wanted = data.get(item) or []
-        wanted = set(wanted) if isinstance(wanted, list) else set()
+        wanted = {x for x in wanted if isinstance(x, str)} if isinstance(wanted, list) else set()
         result[item] = [d for d in deals if d["id"] in wanted]
     return result
 
