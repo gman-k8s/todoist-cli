@@ -30,7 +30,8 @@ fi
     "python-dotenv>=1.0" \
     "google-genai>=1.0" \
     "requests>=2.31" \
-    "InquirerPy>=0.3"
+    "InquirerPy>=0.3" \
+    "pytest>=8"
 
 chmod +x bot.py digest.py time_labels.py
 

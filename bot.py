@@ -17,6 +17,8 @@ import re
 from dotenv import load_dotenv
 from todoist_api_python.api import TodoistAPI
 
+from shopping import find_shopping_project_id
+
 load_dotenv(os.path.join(_dir, ".env"))
 
 TODOIST_TOKEN = os.environ.get("TODOIST_TOKEN")
@@ -173,20 +175,12 @@ def main() -> None:
     if args.shopping:
         items = parse_shopping(args.shopping)
 
-        shopping_project_id = args.project_id or TODOIST_SHOPPING_PROJECT_ID
-        if not shopping_project_id:
-            try:
-                for page in api.get_projects():
-                    for p in page:
-                        if p.name.lower() == "einkaufsliste":
-                            shopping_project_id = p.id
-                            break
-                    if shopping_project_id:
-                        break
-            except Exception as e:
-                sys.exit(f"Error: could not fetch projects ({e})")
-        if not shopping_project_id:
+        try:
+            shopping_project_id = find_shopping_project_id(api, args.project_id or TODOIST_SHOPPING_PROJECT_ID)
+        except LookupError:
             sys.exit("Error: project 'Einkaufsliste' not found. Set TODOIST_SHOPPING_PROJECT_ID in .env or create the project.")
+        except Exception as e:
+            sys.exit(f"Error: could not fetch projects ({e})")
 
         created = []
         for title in items:
